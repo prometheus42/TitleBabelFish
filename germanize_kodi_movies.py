@@ -19,20 +19,21 @@ cfg_password = ''
 tmdb.API_KEY = ''
 
 
-def get_german_info_for_id(id):
-    movie = tmdb.Movies(id)
+def get_german_info_for_id(imdb_id):
+    movie = tmdb.Movies(imdb_id)
     try:
-        x = movie.info(language='DE', append_to_response='alternative_titles')
+        info = movie.info(language='de-DE')
     except requests.exceptions.HTTPError as e:
-        # print(e)
         return None, None, None
-    tmdb_id = x['id']
-    overview = x['overview']
-    for t in x['alternative_titles']['titles']:
-        # TODO: check if there could be more than one German title
-        if 'iso_3166_1' in t and t['iso_3166_1'] in ('DE', 'CH', 'AT'):
-            return t['title'], overview, tmdb_id
-    return None, overview, tmdb_id
+    # find title
+    if info['original_language'] in ('de', 'ch', 'at'):
+        german_title = info['original_title']
+    else:
+        german_title = info['title']
+    # get description and id
+    german_desc = info['overview']
+    tmdb_id = info['id']
+    return german_title, german_desc, tmdb_id
 
 
 def rpc(method, params={}):
@@ -73,11 +74,10 @@ def germanize_kodi_movies():
         if not german_title and not german_desc:
             print(
                 f'Error downloading information about: {movie["title"]} ({imdb_id})')
-        if not german_title:
-            nogerman.append(
-                (movie['title'], imdb_id, f'https://www.imdb.com/title/{imdb_id}/', str(tmdb_id), f'https://www.themoviedb.org/movie/{tmdb_id}'))
-        movie['german_title'] = german_title if german_title else movie['title']
-        movie['german_descr'] = german_desc if german_desc else ''
+        if german_title == movie['title']:
+            nogerman.append((movie['title'], imdb_id, f'https://www.imdb.com/title/{imdb_id}/', str(tmdb_id), f'https://www.themoviedb.org/movie/{tmdb_id}'))
+        movie['german_title'] = german_title
+        movie['german_descr'] = german_desc
         mlist.append(movie)
     return mlist, nogerman
 
@@ -85,7 +85,6 @@ def germanize_kodi_movies():
 if __name__ == '__main__':
     mlist, nogerman = germanize_kodi_movies()
     json.dump(mlist, open('output.json', 'w'))
-    #console = Console()
     table = Table(show_header=True, header_style="bold magenta")
     table.add_column('Title')
     table.add_column('IMDB id')
@@ -93,8 +92,6 @@ if __name__ == '__main__':
     table.add_column('TMDB id')
     table.add_column('TMDB link')
     table.title = '*** Not translated titles ***'
-    for e in nogerman:
-        table.add_row(*e)
-    #console.print(table)
+    map(lambda x: table.add_row(*x), nogerman)
     with open('not_translated_titles.txt', 'w') as f:
         rprint(table, file=f)
